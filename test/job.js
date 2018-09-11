@@ -687,8 +687,8 @@ describe('Job', () => {
 
       agenda.define('lock job', {lockLifetime: 10000000}, (job, cb) => {
         history.push(job.attrs.data.i);
-         setTimeout(() => {
-           cb();
+        setTimeout(() => {
+          cb();
         }, 40000);
       });
 
@@ -706,6 +706,64 @@ describe('Job', () => {
       expect(history).to.contain(1);
       expect(history).to.contain(2);
       expect(history).to.contain(3);
+    });
+
+    it('can set status waiting', (done) => {
+
+      agenda.now('lock job', {i: 1});
+      agenda._collection.find({}, (err, res) => {
+          expect(res[0].status).to.equal('waiting');
+          done();
+        }
+      );
+    });
+
+    it('can set status running', async () => {
+
+      return new Promise(async (resolve, error) => {
+
+        agenda.define('lock job', {lockLifetime: 100}, (job, cb) => {
+          setTimeout(() => {
+            cb();
+          }, 1000);
+        });
+
+        agenda.processEvery(100);
+        await agenda.start();
+
+        agenda.now('lock job', {i: 1});
+
+        await delay(500);
+
+        agenda._collection.find({}, (err, res) => {
+            expect(res[0].status).to.equal('running');
+            resolve();
+          }
+        );
+      });
+    });
+
+    it('can set status complete', async () => {
+
+      return new Promise(async (resolve, error) => {
+
+        agenda.define('lock job', {lockLifetime: 100}, (job, cb) => {
+          cb();
+        });
+
+        agenda.processEvery(100);
+        await agenda.start();
+
+        agenda.now('lock job', {i: 1});
+
+        await delay(500);
+
+        agenda._collection.find({}, (err, res) => {
+            expect(res[0].status).to.equal('complete');
+            resolve();
+          }
+        );
+      });
     });
 
     it('does not on-the-fly lock more than agenda._lockLimit jobs', async () => {
