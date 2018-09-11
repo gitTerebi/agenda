@@ -41,10 +41,10 @@ describe('Job', () => {
         mongoDb = agenda._mdb;
         await delay(50);
         await clearJobs();
-        agenda.define('someJob', jobProcessor);
-        agenda.define('send email', jobProcessor);
-        agenda.define('some job', jobProcessor);
-        agenda.define(jobType, jobProcessor);
+        // agenda.define('someJob', jobProcessor);
+        // agenda.define('send email', jobProcessor);
+        // agenda.define('some job', jobProcessor);
+        //agenda.define(jobType, jobProcessor);
         return resolve();
       });
     });
@@ -685,14 +685,11 @@ describe('Job', () => {
     it('does not process locked jobs', async () => {
       const history = [];
 
-      agenda.define('lock job', {
-        lockLifetime: 300
-      }, (job, cb) => {
+      agenda.define('lock job', {lockLifetime: 10000000}, (job, cb) => {
         history.push(job.attrs.data.i);
-
-        setTimeout(() => {
-          cb();
-        }, 150);
+         setTimeout(() => {
+           cb();
+        }, 40000);
       });
 
       agenda.processEvery(100);
