@@ -1,13 +1,11 @@
 /* globals describe, it, beforeEach, afterEach */
 'use strict';
 const delay = require('delay');
-const {MongoClient} = require('mongodb');
+const Datastore = require('nedb');
 const Agenda = require('..');
 
-const mongoHost = process.env.MONGODB_HOST || 'localhost';
-const mongoPort = process.env.MONGODB_PORT || '27017';
 const agendaDatabase = 'agenda-test';
-const mongoCfg = 'mongodb://' + mongoHost + ':' + mongoPort + '/' + agendaDatabase;
+const mongoCfg = 'C:\\nedb';
 
 // Create agenda instances
 let agenda = null;
@@ -15,48 +13,68 @@ let mongoDb = null;
 let mongoClient = null;
 
 const clearJobs = () => {
-  return mongoDb.collection('agendaJobs').deleteMany({});
+  return mongoDb.remove({}, {multi: true});
 };
 
 const jobType = 'do work';
-const jobProcessor = () => {};
+const jobProcessor = () => {
+};
 
 describe('Retry', () => {
-  beforeEach(done => {
-    agenda = new Agenda({
-      db: {
-        address: mongoCfg
-      }
-    }, err => {
-      if (err) {
-        done(err);
-      }
-      MongoClient.connect(mongoCfg, async(error, client) => {
-        mongoClient = client;
-        mongoDb = client.db(agendaDatabase);
-
+  beforeEach(() => {
+    return new Promise(async resolve => {
+      agenda = new Agenda({
+        db: {
+          filename: mongoCfg,
+          collection: agendaDatabase
+        }
+      }, async () => {
+        mongoDb = agenda._mdb;
         await delay(50);
         await clearJobs();
-
         agenda.define('someJob', jobProcessor);
         agenda.define('send email', jobProcessor);
         agenda.define('some job', jobProcessor);
         agenda.define(jobType, jobProcessor);
-
-        done();
+        return resolve();
       });
+    });
+
+    // agenda = new Agenda({
+    //   db: {
+    //     address: mongoCfg
+    //   }
+    // }, err => {
+    //   if (err) {
+    //     done(err);
+    //   }
+    //   MongoClient.connect(mongoCfg, async(error, client) => {
+    //     mongoClient = client;
+    //     mongoDb = client.db(agendaDatabase);
+    //
+    //     await delay(50);
+    //     await clearJobs();
+    //
+    //     agenda.define('someJob', jobProcessor);
+    //     agenda.define('send email', jobProcessor);
+    //     agenda.define('some job', jobProcessor);
+    //     agenda.define(jobType, jobProcessor);
+    //
+    //     done();
+    //   });
+    // });
+  });
+
+  afterEach(() => {
+    return new Promise(async resolve => {
+      await delay(50);
+      await agenda.stop();
+      await clearJobs();
+      return resolve();
     });
   });
 
-  afterEach(async() => {
-    await delay(50);
-    await agenda.stop();
-    await clearJobs();
-    await mongoClient.close();
-    await agenda._db.close();
-  });
-
-  it('should retry a job', async() => {
+  it('should retry a job', async () => {
     let shouldFail = true;
 
     agenda.processEvery(100); // Shave 5s off test runtime :grin:

@@ -30,22 +30,23 @@ const jobProcessor = () => {
 };
 
 describe('Job', () => {
-  beforeEach(done => {
-
-    agenda = new Agenda({
-      db: {
-        filename: mongoCfg,
-        collection: agendaDatabase
-      }
-    }, async () => {
-      mongoDb = agenda._mdb;
-      await delay(50);
-      await clearJobs();
-      agenda.define('someJob', jobProcessor);
-      agenda.define('send email', jobProcessor);
-      agenda.define('some job', jobProcessor);
-      agenda.define(jobType, jobProcessor);
-      return done();
+  beforeEach(() => {
+    return new Promise(async resolve => {
+      agenda = new Agenda({
+        db: {
+          filename: mongoCfg,
+          collection: agendaDatabase
+        }
+      }, async () => {
+        mongoDb = agenda._mdb;
+        await delay(50);
+        await clearJobs();
+        agenda.define('someJob', jobProcessor);
+        agenda.define('send email', jobProcessor);
+        agenda.define('some job', jobProcessor);
+        agenda.define(jobType, jobProcessor);
+        return resolve();
+      });
     });
 
     // agenda = new Agenda({
