@@ -1,15 +1,13 @@
 /* globals describe, it, beforeEach, afterEach */
 'use strict';
 const expect = require('expect.js');
-const {MongoClient} = require('mongodb');
+const Datastore = require('nedb');
 const delay = require('delay');
 const Agenda = require('..');
 const Job = require('../lib/job');
 
-const mongoHost = process.env.MONGODB_HOST || 'localhost';
-const mongoPort = process.env.MONGODB_PORT || '27017';
 const agendaDatabase = 'agenda-test';
-const mongoCfg = 'mongodb://' + mongoHost + ':' + mongoPort + '/' + agendaDatabase;
+const mongoCfg = 'C:\\nedb';
 
 // Create agenda instances
 let jobs = null;
@@ -17,36 +15,32 @@ let mongoDb = null;
 let mongoClient = null;
 
 const clearJobs = () => {
-  return mongoDb.collection('agendaJobs').deleteMany({});
+  return mongoDb.remove({}, {multi: true});
 };
 
 // Slow timeouts for Travis
 const jobTimeout = process.env.TRAVIS ? 2500 : 500;
 const jobType = 'do work';
-const jobProcessor = () => {};
+const jobProcessor = () => {
+};
 
 describe('Agenda', () => {
   beforeEach(() => {
     return new Promise(async resolve => {
       jobs = new Agenda({
         db: {
-          address: mongoCfg
+          filename: mongoCfg,
+          collection: agendaDatabase
         }
-      }, () => {
-        MongoClient.connect(mongoCfg, async(err, client) => {
-          if (err) {
-            throw err;
-          }
-          mongoClient = client;
-          mongoDb = client.db(agendaDatabase);
-          await delay(50);
-          await clearJobs();
-          jobs.define('someJob', jobProcessor);
-          jobs.define('send email', jobProcessor);
-          jobs.define('some job', jobProcessor);
-          jobs.define(jobType, jobProcessor);
-          return resolve();
-        });
+      }, async () => {
+        mongoDb = jobs._mdb;
+        await delay(50);
+        await clearJobs();
+        jobs.define('someJob', jobProcessor);
+        jobs.define('send email', jobProcessor);
+        jobs.define('some job', jobProcessor);
+        jobs.define(jobType, jobProcessor);
+        return resolve();
       });
     });
   });
@@ -56,8 +50,6 @@ describe('Agenda', () => {
       await delay(50);
       await jobs.stop();
       await clearJobs();
-      await mongoClient.close();
-      await jobs._db.close();
       return resolve();
     });
   });
@@ -69,7 +61,7 @@ describe('Agenda', () => {
   describe('configuration methods', () => {
     it('sets the _db directly when passed as an option', () => {
       const agenda = new Agenda({mongo: mongoDb});
-      expect(agenda._mdb.databaseName).to.equal(agendaDatabase);
+      expect(agenda._mdb.filename).to.contain(agendaDatabase);
     });
   });
 
@@ -78,7 +70,7 @@ describe('Agenda', () => {
       it('sets the _db directly', () => {
         const agenda = new Agenda();
         agenda.mongo(mongoDb);
-        expect(agenda._mdb.databaseName).to.equal(agendaDatabase);
+        expect(agenda._mdb.filename).to.contain(agendaDatabase);
       });
 
       it('returns itself', () => {
@@ -152,7 +144,8 @@ describe('Agenda', () => {
       });
       it('is inherited by jobs', () => {
         jobs.defaultLockLifetime(7777);
-        jobs.define('testDefaultLockLifetime', () => {});
+        jobs.define('testDefaultLockLifetime', () => {
+        });
         expect(jobs._definitions.testDefaultLockLifetime.lockLifetime).to.be(7777);
       });
     });
@@ -215,16 +208,16 @@ describe('Agenda', () => {
 
     describe('every', () => {
       describe('with a job name specified', () => {
-        it('returns a job', async() => {
+        it('returns a job', async () => {
           expect(await jobs.every('5 minutes', 'send email')).to.be.a(Job);
         });
-        it('sets the repeatEvery', async() => {
+        it('sets the repeatEvery', async () => {
           expect(await jobs.every('5 seconds', 'send email').then(({attrs}) => attrs.repeatInterval)).to.be('5 seconds');
         });
-        it('sets the agenda', async() => {
+        it('sets the agenda', async () => {
           expect(await jobs.every('5 seconds', 'send email').then(({agenda}) => agenda)).to.be(jobs);
         });
-        it('should update a job that was previously scheduled with `every`', async() => {
+        it('should update a job that was previously scheduled with `every`', async () => {
           await jobs.every(10, 'shouldBeSingleJob');
           await delay(10);
           await jobs.every(20, 'shouldBeSingleJob');
@@ -237,7 +230,7 @@ describe('Agenda', () => {
         });
       });
       describe('with array of names specified', () => {
-        it('returns array of jobs', async() => {
+        it('returns array of jobs', async () => {
           expect(await jobs.every('5 minutes', ['send email', 'some job'])).to.be.an('array');
         });
       });
@@ -245,17 +238,17 @@ describe('Agenda', () => {
 
     describe('schedule', () => {
       describe('with a job name specified', () => {
-        it('returns a job', async() => {
+        it('returns a job', async () => {
           expect(await jobs.schedule('in 5 minutes', 'send email')).to.be.a(Job);
         });
-        it('sets the schedule', async() => {
+        it('sets the schedule', async () => {
           const fiveish = (new Date()).valueOf() + 250000;
           const scheduledJob = await jobs.schedule('in 5 minutes', 'send email');
           expect(scheduledJob.attrs.nextRunAt.valueOf()).to.be.greaterThan(fiveish);
         });
       });
       describe('with array of names specified', () => {
-        it('returns array of jobs', async() => {
+        it('returns array of jobs', async () => {
           expect(await jobs.schedule('5 minutes', ['send email', 'some job'])).to.be.an('array');
         });
       });
@@ -263,7 +256,7 @@ describe('Agenda', () => {
 
     describe('unique', () => {
       describe('should demonstrate unique contraint', () => {
-        it('should modify one job when unique matches', async() => {
+        it('should modify one job when unique matches', async () => {
           const job1 = await jobs.create('unique job', {
             type: 'active',
             userId: '123',
@@ -284,18 +277,18 @@ describe('Agenda', () => {
 
           expect(job1.attrs.nextRunAt.toISOString()).not.to.equal(job2.attrs.nextRunAt.toISOString());
 
-          mongoDb.collection('agendaJobs').find({
-            name: 'unique job'
-          }).toArray((err, jobs) => {
-            if (err) {
-              throw err;
+          mongoDb.find({name: 'unique job'},
+            (err, jobs) => {
+              if (err) {
+                throw err;
+              }
+              expect(jobs).to.have.length(1);
             }
+          )
 
-            expect(jobs).to.have.length(1);
-          });
         });
 
-        it('should not modify job when unique matches and insertOnly is set to true', async() => {
+        it('should not modify job when unique matches and insertOnly is set to true', async () => {
           const job1 = await jobs.create('unique job', {
             type: 'active',
             userId: '123',
@@ -320,9 +313,7 @@ describe('Agenda', () => {
 
           expect(job1.attrs.nextRunAt.toISOString()).to.equal(job2.attrs.nextRunAt.toISOString());
 
-          mongoDb.collection('agendaJobs').find({
-            name: 'unique job'
-          }).toArray((err, jobs) => {
+          mongoDb.find({name: 'unique job'}, (err, jobs) => {
             if (err) {
               throw err;
             }
@@ -332,7 +323,7 @@ describe('Agenda', () => {
       });
 
       describe('should demonstrate non-unique contraint', () => {
-        it(`should create two jobs when unique doesn't match`, async() => {
+        it(`should create two jobs when unique doesn't match`, async () => {
           const time = new Date(Date.now() + (1000 * 60 * 3));
           const time2 = new Date(Date.now() + (1000 * 60 * 4));
 
@@ -356,28 +347,28 @@ describe('Agenda', () => {
             nextRunAt: time2
           }).schedule(time).save();
 
-          mongoDb.collection('agendaJobs').find({
-            name: 'unique job'
-          }).toArray((err, jobs) => {
-            if (err) {
-              throw err;
+          mongoDb.find({name: 'unique job'},
+            (err, jobs) => {
+              if (err) {
+                throw err;
+              }
+              expect(jobs).to.have.length(2);
             }
-            expect(jobs).to.have.length(2);
-          });
+          )
         });
       });
     });
 
     describe('now', () => {
-      it('returns a job', async() => {
+      it('returns a job', async () => {
         expect(await jobs.now('send email')).to.be.a(Job);
       });
-      it('sets the schedule', async() => {
+      it('sets the schedule', async () => {
         const now = new Date();
         expect(await jobs.now('send email').then(({attrs}) => attrs.nextRunAt.valueOf())).to.be.greaterThan(now.valueOf() - 1);
       });
 
-      it('runs the job immediately', async() => {
+      it('runs the job immediately', async () => {
         jobs.define('immediateJob', async job => {
           expect(job.isRunning()).to.be(true);
           await jobs.stop();
@@ -388,9 +379,9 @@ describe('Agenda', () => {
     });
 
     describe('jobs', () => {
-      it('returns jobs', async() => {
+      it('returns jobs', async () => {
         await jobs.create('test').save();
-        jobs.jobs({}, async(err, c) => {
+        jobs.jobs({}, async (err, c) => {
           if (err) {
             throw err;
           }
@@ -402,13 +393,13 @@ describe('Agenda', () => {
     });
 
     describe('purge', () => {
-      it('removes all jobs without definitions', async() => {
+      it('removes all jobs without definitions', async () => {
         const job = jobs.create('no definition');
         await jobs.stop();
         await job.save();
         jobs.jobs({
           name: 'no definition'
-        }, async(err, j) => { // eslint-disable-line max-nested-callbacks
+        }, async (err, j) => { // eslint-disable-line max-nested-callbacks
           if (err) {
             throw err;
           }
@@ -427,7 +418,7 @@ describe('Agenda', () => {
     });
 
     describe('saveJob', () => {
-      it('persists job to the database', async() => {
+      it('persists job to the database', async () => {
         const job = jobs.create('someJob', {});
         await job.save();
 
@@ -439,7 +430,7 @@ describe('Agenda', () => {
   });
 
   describe('cancel', () => {
-    beforeEach(async() => {
+    beforeEach(async () => {
       let remaining = 3;
       const checkDone = () => {
         remaining--;
@@ -459,7 +450,7 @@ describe('Agenda', () => {
       });
     });
 
-    it('should cancel a job', async() => {
+    it('should cancel a job', async () => {
       const j = await jobs.jobs({name: 'jobA'});
       expect(j).to.have.length(2);
 
@@ -469,16 +460,18 @@ describe('Agenda', () => {
       expect(job).to.have.length(0);
     });
 
-    it('should cancel multiple jobs', async() => {
+    it('should cancel multiple jobs', async () => {
       const jobs1 = await jobs.jobs({name: {$in: ['jobA', 'jobB']}});
       expect(jobs1).to.have.length(3);
-      await jobs.cancel({name: {$in: ['jobA', 'jobB']}});
+
+      const removed = await jobs.cancel({name: {$in: ['jobA', 'jobB']}});
+      expect(removed).to.equal(3);
 
       const jobs2 = await jobs.jobs({name: {$in: ['jobA', 'jobB']}});
       expect(jobs2).to.have.length(0);
     });
 
-    it('should cancel jobs only if the data matches', async() => {
+    it('should cancel jobs only if the data matches', async () => {
       const jobs1 = await jobs.jobs({name: 'jobA', data: 'someData'});
       expect(jobs1).to.have.length(1);
       await jobs.cancel({name: 'jobA', data: 'someData'});
